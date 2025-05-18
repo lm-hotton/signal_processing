@@ -3,55 +3,65 @@ import scipy
 import plotly.express as px
 import pandas as pd
 import endaq
+import matplotlib.pyplot as plt
 
 
-t=np.linspace(1,1000,1000)
-print (t)
+t=np.linspace(0,1,1*400000)
+random=np.random.uniform(1,-1,1*400000)
 
-# get accelerometer data from https://info.endaq.com/hubfs/100Hz_shake_cal.ide
-df_accel = endaq.ide.to_pandas(endaq.ide.get_doc(
-        'https://info.endaq.com/hubfs/100Hz_shake_cal.ide').channels[8].subchannels[2],
-        time_mode='seconds',
+fig0 = px.line(
+        t,
+        x=t,
+        y=random,
     )
+#fig0.show()
 
-# create a new dataframe filtered with a high-pass butterworth with a cutoff frequency of 1 Hz
-df_accel_highpass = endaq.calc.filters.butterworth(df_accel, low_cutoff=1, high_cutoff=None)
-df_accel_highpass.columns = ['1Hz high-pass filter']
 
-# create a new dataframe filtered with a low-pass butterworth with a cutoff frequency of 100 Hz
-df_accel_lowpass = endaq.calc.filters.butterworth(df_accel, low_cutoff=None, high_cutoff=100)
-df_accel_lowpass.columns = ['100Hz low-pass filter']
-
-# merge the data into a single dataframe for plotting
-df_accel = df_accel.join(df_accel_highpass, how='left')
-df_accel = df_accel.join(df_accel_lowpass, how='left')
-
-# plot everything on the same axes
-fig1 = px.line(
-        df_accel,
-        x=df_accel.index,
-        y=df_accel.columns,
-        labels=
-            {
-                "timestamp": "time [s]",
-                "value": "Acceleration [g]",
-            },
-    )
-fig1.show()
-
-#Get Acceleration Data
-bearing = pd.read_csv('https://info.endaq.com/hubfs/Plots/bearing_data.csv', index_col=0)
-
-#Calculate PSD with 1 Hz Bin Width
-psd = endaq.calc.psd.welch(df_accel, bin_width=1)
+#Calculate PSD
+f, psd = scipy.signal.welch(t,fs=400000.,window='hann', nperseg=32768,noverlap=0.5)
 
 #Plot PSD
-fig1 = px.line(psd[10:5161]).update_layout(
-    title_text='1 Hz PSD of Bearing Vibration',
-    yaxis_title_text='Acceleration (g^2/Hz)',
-    xaxis_title_text='Frequency (Hz)',
-    xaxis_type='log',
-    yaxis_type='log',
+fig1 = px.line(f,
+               x=f,
+               y=psd,
+               log_y=True
+    )
+#fig1.show()
+
+expo=1*np.exp(-10*t)
+choc=random*expo
+
+fig2 = px.line(
+        t,
+        x=t,
+        y=choc,
+    )
+#fig2.show()
+
+b, a = scipy.signal.butter(8, 10000/400000)
+choc2 = scipy.signal.filtfilt(b, a, choc, padlen=150)
+
+fig3 = px.line(
+        t,
+        x=t,
+        y=choc2,
+    )
+fig3.show()
+
+pdchoc2=pd.DataFrame(choc2,t)
+print(pdchoc2)
+
+#Calculate SRS
+freqs = endaq.calc.utils.logfreqs(pdchoc2, init_freq=1, bins_per_octave=12)
+srs = endaq.calc.shock.shock_spectrum(pdchoc2, freqs=freqs, damp=10., mode='srs')
+
+#Plot SRS
+fig4 = px.line(srs).update_layout(
+    title_text='Shock Response Spectrum (SRS) of Motorcycle Crash',
+    xaxis_title_text="Natural Frequency (Hz)",
+    yaxis_title_text="Peak Acceleration (g)",
     legend_title_text='',
-)
-fig1.show()
+    xaxis_type="log",
+    yaxis_type="log",
+  )
+fig4.show()
